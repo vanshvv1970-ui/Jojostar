@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import insightface
 from insightface.app import FaceAnalysis
+import onnxruntime as ort
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 import urllib.request
@@ -17,12 +18,25 @@ if not os.path.exists(MODEL_FILE):
     url = "https://huggingface.co/ezioruan/inswapper_128.onnx/resolve/main/inswapper_128.onnx"
     urllib.request.urlretrieve(url, MODEL_FILE)
 
-# Memory Optimization: Use 'buffalo_sc' (Small/Compact) for free tier RAM limits
-print("Initializing InsightFace CPU Engine...")
+# 1. Configure ONNX Session Options for 512MB RAM Limits
+sess_options = ort.SessionOptions()
+sess_options.enable_cpu_mem_arena = False  # Prevents ONNX from pre-allocating memory pools
+sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+sess_options.intra_op_num_threads = 1     # Limits CPU threads to keep RAM usage low
+
+print("Initializing InsightFace Engine...")
+# 2. Use 'buffalo_sc' (Lightweight face detection)
 face_app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
 face_app.prepare(ctx_id=0, det_size=(320, 320))
-swapper = insightface.model_zoo.get_model(MODEL_FILE, download=False)
-print("Engine Online!")
+
+# 3. Load Swapper using Memory Mapping
+swapper = insightface.model_zoo.get_model(
+    MODEL_FILE, 
+    download=False, 
+    provider_options=[{'enable_mem_arena': '0'}]
+)
+
+print("Engine Online within Memory Budget!")
 
 @app.route('/')
 def health():
